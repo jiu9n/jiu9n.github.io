@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Twice！</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden;
+            background: #f0f8ff; 
+            font-family: sans-serif; 
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            pointer-events: none; 
+            z-index: 10; 
+        }
+        
+        .container { 
+            display: flex; 
+            justify-content: space-around; 
+            align-items: center; 
+            height: 100vh; 
+            padding: 0 10px;
+            box-sizing: border-box; 
+        }
+        .column { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+        }
+        
+        .item { 
+            width: 70px; 
+            height: 70px;
+            background: #fff; 
+            border-radius: 12px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+            cursor: pointer; 
+            transition: 0.3s;
+            position: relative; 
+            overflow: hidden;
+        }
+        .item img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+        }
+        .item:hover { 
+            transform: scale(1.05); 
+        }
+        .item.matched { 
+            opacity: 0.5; 
+            pointer-events: none; 
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            60% { transform: translateX(-8px); }
+            80% { transform: translateX(8px); }
+        }
+        .shake {
+            animation: shake 0.4s ease;
+            border: 2px solid #ff4d4d;
+        }
+
+        .heart { 
+            position: absolute; 
+            font-size: 30px; 
+            color: #ff4d4d; 
+            animation: pop 0.5s ease; 
+            pointer-events: none; 
+            z-index: 20;
+        }
+        @keyframes pop { 
+            0% { transform: scale(0); } 
+            50% { transform: scale(1.5); } 
+            100% { transform: scale(1); } 
+        }
+
+        .win-msg { 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-size: 30px; 
+            color: #ff4d4d; 
+            font-weight: bold; 
+            display: none; 
+            z-index: 30;
+            text-align: center; 
+            text-shadow: 0 2px 10px rgba(255,77,77,0.3);
+            background: rgba(255,255,255,0.9);
+            padding: 20px 40px;
+            border-radius: 20px;
+        }
+
+        .win-img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            z-index: 40;
+            max-width: 80%;
+            max-height: 80%;
+            border-radius: 20px;
+            box-shadow: 0 0 30px rgba(255,77,77,0.5);
+            display: none;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .win-img.show {
+            display: block;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="lineCanvas"></canvas>
+<!-- ✅ 修改了图片路径 -->
+<img src="twice/twice.jpg" class="win-img" id="winImg" alt="通关奖励">
+<div class="win-msg" id="winMsg">🎉 恭喜配对成功！🎉</div>
+
+<div class="container">
+    <div class="column" id="leftCol"></div>
+    <div class="column" id="rightCol"></div>
+</div>
+
+<script>
+    const pairs = [
+        {id: 1, person: 'twice/nayeon.jpg', mascot: 'twice/navely.jpg' },
+        {id: 2, person: 'twice/sana.jpg', mascot: 'twice/savely.jpg' },
+        {id: 3, person: 'twice/dahyun.jpg', mascot: 'twice/davely.jpg' },
+        {id: 4, person: 'twice/jeonyeon.jpg', mascot: 'twice/jeongvely.jpg' },
+        {id: 5, person: 'twice/jihyo.jpg', mascot: 'twice/jively.jpg' },
+        {id: 6, person: 'twice/chaeyoung.jpg', mascot: 'twice/chaengvely.jpg' },
+        {id: 7, person: 'twice/momo.jpg', mascot: 'twice/movely.jpg' },
+        {id: 8, person: 'twice/mina.jpg', mascot: 'twice/mively.jpg' },
+        {id: 9, person: 'twice/tzuyu.jpg', mascot: 'twice/tzuvely.jpg' },
+    ];
+
+    const leftCol = document.getElementById('leftCol');
+    const rightCol = document.getElementById('rightCol');
+    const canvas = document.getElementById('lineCanvas');
+    const ctx = canvas.getContext('2d');
+    const winImg = document.getElementById('winImg');
+    let matchedCount = 0;
+    let isDragging = false;
+    let currentStart = null;
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function renderItems() {
+        const shuffledRight = [...pairs].sort(() => Math.random() - 0.5);
+        pairs.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.dataset.id = p.id;
+            div.dataset.side = 'left';
+            div.innerHTML = `<img src="${p.person}" alt="person">`;
+            leftCol.appendChild(div);
+        });
+        shuffledRight.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.dataset.id = p.id;
+            div.dataset.side = 'right';
+            div.innerHTML = `<img src="${p.mascot}" alt="mascot">`;
+            rightCol.appendChild(div);
+        });
+    }
+    renderItems();
+
+    function getCoordinates(e) {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    function handleStart(e) {
+        if (e.type === 'touchstart') e.preventDefault();
+        const target = e.target.closest('.item');
+        if (target && !target.classList.contains('matched')) {
+            isDragging = true;
+            const rect = target.getBoundingClientRect();
+            currentStart = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                id: target.dataset.id,
+                side: target.dataset.side,
+                el: target
+            };
+        }
+    }
+
+    function handleMove(e) {
+        if (!isDragging || !currentStart) return;
+        if (e.type === 'touchmove') e.preventDefault();
+        const coords = getCoordinates(e);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.beginPath();
+        ctx.moveTo(currentStart.x, currentStart.y);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.strokeStyle = '#ff9999';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    }
+
+    function handleEnd(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!currentStart) {
+            currentStart = null;
+            return;
+        }
+
+        let endX, endY;
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            endX = e.changedTouches[0].clientX;
+            endY = e.changedTouches[0].clientY;
+        } else {
+            endX = e.clientX;
+            endY = e.clientY;
+        }
+
+        const target = document.elementFromPoint(endX, endY);
+        if (target) {
+            const targetItem = target.closest('.item');
+            if (targetItem && 
+                targetItem.dataset.side !== currentStart.side &&
+                !targetItem.classList.contains('matched')) {
+                if (targetItem.dataset.id === currentStart.id) {
+                    handleMatch(targetItem);
+                } else {
+                    const startEl = currentStart.el;
+                    startEl.classList.add('shake');
+                    targetItem.classList.add('shake');
+                    setTimeout(() => {
+                        startEl.classList.remove('shake');
+                        targetItem.classList.remove('shake');
+                    }, 400);
+                }
+            }
+        }
+        currentStart = null;
+    }
+
+    function handleMatch(targetEl) {
+        matchedCount++;
+        const startEl = currentStart.el;
+        startEl.classList.add('matched');
+        targetEl.classList.add('matched');
+
+        const heart = document.createElement('div');
+        heart.className = 'heart';
+        heart.textContent = '❤️';
+        const rect = targetEl.getBoundingClientRect();
+        heart.style.left = (rect.left + rect.width/2 - 15) + 'px';
+        heart.style.top = (rect.top + rect.height/2 - 15) + 'px';
+        document.body.appendChild(heart);
+        setTimeout(() => heart.remove(), 600);
+
+        if (matchedCount === pairs.length) {
+            setTimeout(() => {
+                winImg.style.display = 'block';
+                setTimeout(() => {
+                    winImg.classList.add('show');
+                }, 50);
+                document.getElementById('winMsg').style.display = 'block';
+            }, 300);
+        }
+    }
+
+    document.addEventListener('mousedown', handleStart);
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+
+    document.addEventListener('touchstart', handleStart, { passive: false });
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', handleEnd);
+</script>
+</body>
+</html>
